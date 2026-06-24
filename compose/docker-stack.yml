@@ -1,0 +1,74 @@
+# NAV Board — Swarm stack para deploy via Traefik (servidor Promo)
+#
+# Deploy (executado pelo GitHub Actions ou manualmente):
+#   export IMAGE_NAVBOARD=ghcr.io/Demo Events Org/admin-board:<sha>
+#   export DATABASE_URL=postgresql://postgres:SENHA@pgvector:5432/adminboard?schema=public
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#   export APP_GITHUB_TOKEN=github_pat_...
+#   docker stack deploy -c docker-stack.yml --with-registry-auth admin-board
+#
+# Pré-requisitos no host (já existem):
+#   - docker swarm ativo
+#   - rede overlay externa "DemoNet"
+#   - Traefik com certresolver "letsencryptresolver" e entrypoint "websecure"
+#   - Postgres acessível como host "pgvector" na rede DemoNet
+version: '3.8'
+
+services:
+  app:
+    image: ${IMAGE_NAVBOARD}
+    networks:
+      - DemoNet
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=${DATABASE_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${APP_GITHUB_TOKEN}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - GITHUB_OWNER=Demo Events CoOrg
+      - GITHUB_REPO=nav
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+      labels:
+        # Traefik v3 com provider Swarm: usar APENAS traefik.swarm.* (não traefik.docker.*)
+        - traefik.enable=true
+        - traefik.swarm.network=DemoNet
+        - traefik.http.services.adminboard.loadbalancer.server.port=3000
+        - traefik.http.services.adminboard.loadbalancer.passhostheader=true
+        - traefik.http.routers.adminboard.entrypoints=websecure
+        - traefik.http.routers.adminboard.rule=Host(`adminboard.demo-events.com.br`)
+        - traefik.http.routers.adminboard.tls=true
+        - traefik.http.routers.adminboard.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.adminboard.service=adminboard
+
+networks:
+  DemoNet:
+    external: true

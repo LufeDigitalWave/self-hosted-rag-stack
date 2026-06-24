@@ -1,0 +1,101 @@
+version: "3.7"
+services:
+
+## --------------------------- ORION --------------------------- ##
+
+  nocodb_app: 
+    image: nocodb/nocodb:latest
+
+    volumes: 
+      - nocodb_data:/usr/app/data
+
+    networks:
+      - DemoNet
+
+    environment: 
+    ## 🌐 Url do Nocobase
+      - NC_PUBLIC_URL=https://nocodb.demo-events.com.br
+
+    ## 🐘 Dados Postgres
+      - NC_DB=pg://postgres:5432?u=postgres&p=${DB_PASSWORD}&d=nocodb
+
+    ## 🔗 Dados do redis
+      - NC_REDIS_URL=redis://nocodb_redis:6379
+
+    ## 👀 Desativar Telemetria
+      - NC_DISABLE_TELE=true  
+
+    ## 🔑 Secret Key
+      - NC_AUTH_JWT_SECRET=${SECRET}
+
+    ## 📧 Dados do SMTP
+      #- NC_SMTP_FROM=
+      #- NC_SMTP_USERNAMENC_SMTP_USERNAME=
+      #- NC_SMTP_HOST=
+      #- NC_SMTP_PORT=587
+      #- NC_SMTP_SECURE=false
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.nocodb_app.rule=Host(`nocodb.demo-events.com.br`)
+        - traefik.http.routers.nocodb_app.entrypoints=websecure
+        - traefik.http.services.nocodb_app.loadbalancer.server.port=8080
+        - traefik.http.routers.nocodb_app.service=nocodb_app
+        - traefik.http.routers.nocodb_app.tls.certresolver=letsencryptresolver
+        - com.centurylinklabs.watchtower.enable=true
+
+## --------------------------- ORION --------------------------- ##
+
+  nocodb_redis:
+    image: redis:latest  ## Versão do Redis
+    command: [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--port",
+        "6379"
+      ]
+
+    volumes:
+      - nocodb_redis:/data
+
+    networks:
+      - DemoNet ## Nome da rede interna
+
+    ## Descomente as linhas abaixo para uso externo
+    #ports:
+    #  - 6379:6379
+
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+## --------------------------- ORION --------------------------- ##
+
+volumes:
+  nocodb_data:
+    external: true
+    name: nocodb_data
+  nocodb_redis:
+    external: true
+    name: nocodb_redis
+
+networks:
+  DemoNet:
+    name: DemoNet
+    external: true
